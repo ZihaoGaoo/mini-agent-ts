@@ -58,7 +58,7 @@ pnpm format
 pnpm format:check
 ```
 
-VS Code 已配置为保存时自动使用 Prettier 格式化。
+VS Code 已配置为保存时自动格式化；编辑器内使用内置 formatter，命令行可继续用 `pnpm format` 执行 Prettier。
 
 ## 命令
 
