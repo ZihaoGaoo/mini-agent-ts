@@ -1,0 +1,22 @@
+# Mini Agent TS Lite Configuration
+
+api_key: "YOUR_API_KEY_HERE"
+api_base: "https://api.minimax.io"
+model: "MiniMax-M2.5"
+provider: "openai"
+
+retry:
+  enabled: true
+  max_retries: 3
+  initial_delay: 1
+  max_delay: 30
+  exponential_base: 2
+
+max_steps: 30
+workspace_dir: "./workspace"
+system_prompt_path: "system_prompt.md"
+
+tools:
+  enable_file_tools: true
+  enable_bash: true
+  enable_note: true

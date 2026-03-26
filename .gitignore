@@ -1,0 +1,17 @@
+node_modules/
+.pnpm-store/
+
+dist/
+*.tsbuildinfo
+
+config/config.yaml
+workspace/
+.agent_memory.json
+
+.DS_Store
+*.log
+
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
