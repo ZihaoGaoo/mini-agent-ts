@@ -36,7 +36,15 @@ export class Agent {
   async run(): Promise<string> {
     for (let step = 0; step < this.maxSteps; step += 1) {
       this.onEvent?.({ type: "step_started", step: step + 1, maxSteps: this.maxSteps });
-      const response = await this.llm.generate(this.messages, Array.from(this.tools.values()));
+      const response = await this.llm.generate(
+        this.messages,
+        Array.from(this.tools.values()),
+        this.onEvent
+          ? (delta) => {
+              this.onEvent?.({ type: "assistant_delta", delta });
+            }
+          : undefined
+      );
       this.totalTokens = response.usage?.totalTokens ?? this.totalTokens;
 
       this.messages.push({

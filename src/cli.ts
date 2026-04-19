@@ -47,31 +47,68 @@ Commands:
 `);
 }
 
-function handleCliEvent(event: AgentEvent): void {
-  if (event.type === "step_started") {
-    console.log(`\n[step ${event.step}/${event.maxSteps}]`);
-    return;
-  }
+function createCliEventHandler(): (event: AgentEvent) => void {
+  let assistantLineOpen = false;
+  let streamedAssistant = false;
 
-  if (event.type === "assistant_message") {
-    if (event.content) {
-      console.log(`assistant> ${event.content}`);
-    }
-    return;
-  }
-
-  if (event.type === "tool_call") {
-    console.log(`tool> ${event.toolName}`);
-    return;
-  }
-
-  if (event.type === "tool_result") {
-    if (event.success) {
-      console.log(`tool-result> ${event.content}`);
-    } else {
-      console.log(`tool-error> ${event.error}`);
+  function closeAssistantLine(): void {
+    if (assistantLineOpen) {
+      process.stdout.write("\n");
+      assistantLineOpen = false;
     }
   }
+
+  return (event: AgentEvent) => {
+    if (event.type === "step_started") {
+      closeAssistantLine();
+      streamedAssistant = false;
+      console.log(`\n[step ${event.step}/${event.maxSteps}]`);
+      return;
+    }
+
+    if (event.type === "assistant_delta") {
+      if (!assistantLineOpen) {
+        process.stdout.write("assistant> ");
+        assistantLineOpen = true;
+      }
+      process.stdout.write(event.delta);
+      streamedAssistant = true;
+      return;
+    }
+
+    if (event.type === "assistant_message") {
+      if (streamedAssistant) {
+        closeAssistantLine();
+        streamedAssistant = false;
+        return;
+      }
+
+      if (event.content) {
+        console.log(`assistant> ${event.content}`);
+      }
+      return;
+    }
+
+    if (event.type === "tool_call") {
+      closeAssistantLine();
+      console.log(`tool> ${event.toolName}`);
+      return;
+    }
+
+    if (event.type === "tool_result") {
+      closeAssistantLine();
+      if (event.success) {
+        console.log(`tool-result> ${event.content}`);
+      } else {
+        console.log(`tool-error> ${event.error}`);
+      }
+      return;
+    }
+
+    if (event.type === "run_completed") {
+      closeAssistantLine();
+    }
+  };
 }
 
 async function main(): Promise<void> {
@@ -90,6 +127,7 @@ async function main(): Promise<void> {
       [environmentId]: workspaceDir
     })
   );
+  const handleCliEvent = createCliEventHandler();
   const session = await runtime.createSession(environmentId, "cli");
 
   console.log(`config> ${configPath}`);

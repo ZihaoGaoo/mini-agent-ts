@@ -127,6 +127,7 @@ pnpm start
 - `GET /sessions/:id`
 - `DELETE /sessions/:id`
 - `POST /sessions/:id/messages`
+- `POST /sessions/:id/messages/stream`
 
 示例：
 
@@ -136,6 +137,10 @@ curl -X POST http://127.0.0.1:3000/sessions \
   -d '{"environmentId":"local-dev"}'
 
 curl -X POST http://127.0.0.1:3000/sessions/<sessionId>/messages \
+  -H "Content-Type: application/json" \
+  -d '{"environmentId":"local-dev","content":"read README.md and summarize"}'
+
+curl -sN -X POST http://127.0.0.1:3000/sessions/<sessionId>/messages/stream \
   -H "Content-Type: application/json" \
   -d '{"environmentId":"local-dev","content":"read README.md and summarize"}'
 ```

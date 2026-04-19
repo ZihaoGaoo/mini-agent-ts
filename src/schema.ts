@@ -45,6 +45,11 @@ export interface AssistantMessageEvent {
   toolCalls: ToolCall[];
 }
 
+export interface AssistantDeltaEvent {
+  type: "assistant_delta";
+  delta: string;
+}
+
 export interface ToolCallEvent {
   type: "tool_call";
   toolCallId: string;
@@ -70,6 +75,7 @@ export interface RunCompletedEvent {
 
 export type AgentEvent =
   | StepStartedEvent
+  | AssistantDeltaEvent
   | AssistantMessageEvent
   | ToolCallEvent
   | ToolResultEvent

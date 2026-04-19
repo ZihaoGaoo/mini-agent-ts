@@ -18,6 +18,10 @@ interface SendMessageBody {
   environmentId?: string;
 }
 
+interface StreamMessageParams {
+  id: string;
+}
+
 function parseEnvironmentMap(): Record<string, string> {
   const raw = process.env.AGENT_ENVIRONMENT_MAP_JSON ?? "{}";
   const parsed = JSON.parse(raw);
@@ -48,6 +52,11 @@ function sessionSummary(session: SessionSnapshot) {
     messageCount: session.messages.length,
     totalTokens: session.totalTokens
   };
+}
+
+function writeSseEvent(raw: NodeJS.WritableStream, event: string, data: unknown): void {
+  raw.write(`event: ${event}\n`);
+  raw.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
 async function main(): Promise<void> {
@@ -136,6 +145,60 @@ async function main(): Promise<void> {
       messageCount: result.messageCount,
       totalTokens: result.totalTokens
     };
+  });
+
+  app.post<{ Params: StreamMessageParams; Body: SendMessageBody }>("/sessions/:id/messages/stream", async (request, reply) => {
+    const content = requireString(request.body?.content, "content");
+    const existingSession = await runtime.getSession(request.params.id);
+    const environmentId = request.body?.environmentId ? requireString(request.body.environmentId, "environmentId") : undefined;
+
+    if (!existingSession && !environmentId) {
+      throw new Error("environmentId is required when creating a new session via /messages/stream.");
+    }
+
+    reply.hijack();
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive"
+    });
+
+    let closed = false;
+    raw.on("close", () => {
+      closed = true;
+    });
+
+    try {
+      const result = await runtime.runTurn({
+        sessionId: request.params.id,
+        environmentId,
+        userMessage: content,
+        onEvent: (event) => {
+          if (!closed) {
+            writeSseEvent(raw, event.type, event);
+          }
+        }
+      });
+
+      if (!closed) {
+        writeSseEvent(raw, "result", {
+          sessionId: result.sessionId,
+          runId: result.runId,
+          environmentId: result.environmentId,
+          assistantMessage: result.assistantMessage,
+          messageCount: result.messageCount,
+          totalTokens: result.totalTokens
+        });
+        raw.end();
+      }
+    } catch (error) {
+      if (!closed) {
+        const message = getErrorMessage(error);
+        writeSseEvent(raw, "error", { message });
+        raw.end();
+      }
+    }
   });
 
   await app.listen({
