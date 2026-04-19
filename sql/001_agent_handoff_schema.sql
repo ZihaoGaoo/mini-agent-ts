@@ -13,6 +13,8 @@ CREATE TABLE sessions (
   user_id TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'busy', 'archived', 'error')),
   current_agent TEXT NOT NULL,
+  workspace_dir TEXT NOT NULL,
+  total_tokens BIGINT NOT NULL DEFAULT 0,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -28,6 +30,7 @@ CREATE TABLE runs (
   trace_id TEXT,
   input_summary TEXT,
   output_summary TEXT,
+  total_tokens BIGINT NOT NULL DEFAULT 0,
   error_message TEXT,
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   finished_at TIMESTAMPTZ,
@@ -112,6 +115,8 @@ COMMENT ON COLUMN sessions.id IS 'Primary key for the conversation.';
 COMMENT ON COLUMN sessions.user_id IS 'Optional business user identifier owning the session.';
 COMMENT ON COLUMN sessions.status IS 'Conversation state, e.g. active, busy, archived, or error.';
 COMMENT ON COLUMN sessions.current_agent IS 'Name of the agent currently owning the conversation after the latest handoff.';
+COMMENT ON COLUMN sessions.workspace_dir IS 'Workspace directory bound to the session for local file and shell tools.';
+COMMENT ON COLUMN sessions.total_tokens IS 'Latest total token count tracked for the session.';
 COMMENT ON COLUMN sessions.metadata IS 'Arbitrary session-level metadata in JSON form.';
 COMMENT ON COLUMN sessions.created_at IS 'Session creation timestamp.';
 COMMENT ON COLUMN sessions.updated_at IS 'Last session update timestamp.';
@@ -126,6 +131,7 @@ COMMENT ON COLUMN runs.status IS 'Run lifecycle state such as queued, running, c
 COMMENT ON COLUMN runs.trace_id IS 'Distributed tracing identifier for observability across systems.';
 COMMENT ON COLUMN runs.input_summary IS 'Optional short summary of the run input.';
 COMMENT ON COLUMN runs.output_summary IS 'Optional short summary of the run output.';
+COMMENT ON COLUMN runs.total_tokens IS 'Latest total token count reported by the model for this run.';
 COMMENT ON COLUMN runs.error_message IS 'Failure reason if the run did not complete successfully.';
 COMMENT ON COLUMN runs.started_at IS 'Timestamp when execution started.';
 COMMENT ON COLUMN runs.finished_at IS 'Timestamp when execution finished.';

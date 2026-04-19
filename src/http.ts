@@ -77,6 +77,7 @@ function sessionSummary(session: SessionSnapshot) {
   return {
     sessionId: session.id,
     workspaceDir: session.workspaceDir,
+    currentAgent: session.currentAgent,
     messageCount: session.messages.length,
     totalTokens: session.totalTokens
   };
@@ -154,6 +155,7 @@ async function main(): Promise<void> {
 
         sendJson(res, 200, {
           sessionId: result.sessionId,
+          runId: result.runId,
           workspaceDir: result.workspaceDir,
           assistantMessage: result.assistantMessage,
           messageCount: result.messageCount,
