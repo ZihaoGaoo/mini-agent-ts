@@ -1,47 +1,17 @@
-const fs = require("node:fs/promises");
-const os = require("node:os");
-const path = require("node:path");
+import fs from "node:fs/promises";
+import path from "node:path";
 
-import { AppConfig, Provider } from "./schema";
+import { AppConfig } from "./schema";
 import { parseSimpleYaml } from "./utils/yaml";
 
 function normalizeConfig(raw: Record<string, any>): AppConfig {
-  const provider = (raw.provider ?? "openai") as Provider;
-
   return {
     apiKey: raw.api_key,
-    apiBase: raw.api_base ?? "https://api.minimax.io",
+    apiBase: raw.api_base ?? "https://api.minimax.io/v1",
     model: raw.model ?? "MiniMax-M2.5",
-    provider,
-    retry: {
-      enabled: raw.retry?.enabled ?? true,
-      maxRetries: raw.retry?.max_retries ?? 3,
-      initialDelay: raw.retry?.initial_delay ?? 1,
-      maxDelay: raw.retry?.max_delay ?? 30,
-      exponentialBase: raw.retry?.exponential_base ?? 2
-    },
-    maxSteps: raw.max_steps ?? 30,
-    workspaceDir: raw.workspace_dir ?? "./workspace",
-    systemPromptPath: raw.system_prompt_path ?? "system_prompt.md",
-    tools: {
-      enableFileTools: raw.tools?.enable_file_tools ?? true,
-      enableBash: raw.tools?.enable_bash ?? true,
-      enableNote: raw.tools?.enable_note ?? true
-    }
+    maxSteps: raw.max_steps ?? 20,
+    systemPromptPath: raw.system_prompt_path ?? "system_prompt.md"
   };
-}
-
-async function findExisting(paths: string[]): Promise<string | null> {
-  for (const candidate of paths) {
-    try {
-      await fs.access(candidate);
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
 }
 
 export function resolveProjectRoot(): string {
@@ -58,14 +28,11 @@ export function resolveProjectRoot(): string {
 
 export async function loadConfig(): Promise<{ config: AppConfig; configPath: string; systemPrompt: string }> {
   const projectRoot = resolveProjectRoot();
-  const candidates = [
-    path.join(process.cwd(), "config", "config.yaml"),
-    path.join(projectRoot, "config", "config.yaml"),
-    path.join(os.homedir(), ".mini-agent-ts-lite", "config", "config.yaml")
-  ];
+  const configPath = path.join(projectRoot, "config", "config.yaml");
 
-  const configPath = await findExisting(candidates);
-  if (!configPath) {
+  try {
+    await fs.access(configPath);
+  } catch {
     throw new Error("config.yaml not found. Copy config/config-example.yaml to config/config.yaml and fill api_key.");
   }
 

@@ -1,14 +1,13 @@
-const fs = require("node:fs/promises");
-const path = require("node:path");
+import fs from "node:fs/promises";
+import path from "node:path";
 
-import { ToolResult } from "../schema";
-import { BaseTool } from "./base";
+import { Tool, ToolResult } from "../schema";
 
 function resolvePath(workspaceDir: string, filePath: string): string {
   return path.isAbsolute(filePath) ? filePath : path.join(workspaceDir, filePath);
 }
 
-export class ReadFileTool extends BaseTool {
+export class ReadFileTool implements Tool {
   name = "read_file";
   description = "Read a file from the workspace and return line-numbered content.";
   parameters = {
@@ -20,10 +19,7 @@ export class ReadFileTool extends BaseTool {
     },
     required: ["path"]
   };
-
-  constructor(private readonly workspaceDir: string) {
-    super();
-  }
+  constructor(private readonly workspaceDir: string) {}
 
   async execute(args: Record<string, any>): Promise<ToolResult> {
     try {
@@ -42,7 +38,7 @@ export class ReadFileTool extends BaseTool {
   }
 }
 
-export class WriteFileTool extends BaseTool {
+export class WriteFileTool implements Tool {
   name = "write_file";
   description = "Write complete content to a file, replacing any existing file.";
   parameters = {
@@ -53,10 +49,7 @@ export class WriteFileTool extends BaseTool {
     },
     required: ["path", "content"]
   };
-
-  constructor(private readonly workspaceDir: string) {
-    super();
-  }
+  constructor(private readonly workspaceDir: string) {}
 
   async execute(args: Record<string, any>): Promise<ToolResult> {
     try {
@@ -64,46 +57,6 @@ export class WriteFileTool extends BaseTool {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, String(args.content ?? ""), "utf8");
       return { success: true, content: `Wrote ${filePath}` };
-    } catch (error) {
-      return { success: false, content: "", error: String(error) };
-    }
-  }
-}
-
-export class EditFileTool extends BaseTool {
-  name = "edit_file";
-  description = "Replace an exact unique string in a file.";
-  parameters = {
-    type: "object" as const,
-    properties: {
-      path: { type: "string", description: "Absolute or workspace-relative file path." },
-      old_str: { type: "string", description: "Exact existing text." },
-      new_str: { type: "string", description: "Replacement text." }
-    },
-    required: ["path", "old_str", "new_str"]
-  };
-
-  constructor(private readonly workspaceDir: string) {
-    super();
-  }
-
-  async execute(args: Record<string, any>): Promise<ToolResult> {
-    try {
-      const filePath = resolvePath(this.workspaceDir, args.path);
-      const content = await fs.readFile(filePath, "utf8");
-      const oldValue = String(args.old_str ?? "");
-      const newValue = String(args.new_str ?? "");
-
-      const occurrences = content.split(oldValue).length - 1;
-      if (occurrences === 0) {
-        return { success: false, content: "", error: "Target text not found." };
-      }
-      if (occurrences > 1) {
-        return { success: false, content: "", error: "Target text appears multiple times. Refine old_str." };
-      }
-
-      await fs.writeFile(filePath, content.replace(oldValue, newValue), "utf8");
-      return { success: true, content: `Edited ${filePath}` };
     } catch (error) {
       return { success: false, content: "", error: String(error) };
     }

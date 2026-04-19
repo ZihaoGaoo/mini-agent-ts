@@ -1,15 +1,13 @@
-const fs = require("node:fs/promises");
-const path = require("node:path");
-const readline = require("node:readline/promises");
+import fs from "node:fs/promises";
+import path from "node:path";
+import * as readline from "node:readline/promises";
 
 import { Agent } from "./agent";
 import { loadConfig } from "./config";
 import { LLMClient } from "./llm/client";
 import { Tool } from "./schema";
 import { BashTool } from "./tools/bashTool";
-import { EditFileTool, ReadFileTool, WriteFileTool } from "./tools/fileTools";
-import { RecallNotesTool, RecordNoteTool } from "./tools/noteTools";
-import { RunLogger } from "./utils/logger";
+import { ReadFileTool, WriteFileTool } from "./tools/fileTools";
 
 interface ParsedArgs {
   workspace?: string;
@@ -52,32 +50,12 @@ Commands:
 `);
 }
 
-function createTools(workspaceDir: string, enable: { file: boolean; bash: boolean; note: boolean }): Tool[] {
-  const tools: Tool[] = [];
-
-  if (enable.file) {
-    tools.push(new ReadFileTool(workspaceDir), new WriteFileTool(workspaceDir), new EditFileTool(workspaceDir));
-  }
-  if (enable.bash) {
-    tools.push(new BashTool(workspaceDir));
-  }
-  if (enable.note) {
-    const memoryFile = path.join(workspaceDir, ".agent_memory.json");
-    tools.push(new RecordNoteTool(memoryFile), new RecallNotesTool(memoryFile));
-  }
-
-  return tools;
-}
-
-async function ensureConfigExample(projectRoot: string): Promise<void> {
-  const configTarget = path.join(projectRoot, "config", "config.yaml");
-  try {
-    await fs.access(configTarget);
-  } catch {
-    const example = path.join(projectRoot, "config", "config-example.yaml");
-    const content = await fs.readFile(example, "utf8");
-    await fs.writeFile(configTarget, content, "utf8");
-  }
+function createTools(workspaceDir: string): Tool[] {
+  return [
+    new ReadFileTool(workspaceDir),
+    new WriteFileTool(workspaceDir),
+    new BashTool(workspaceDir)
+  ];
 }
 
 async function main(): Promise<void> {
@@ -87,33 +65,21 @@ async function main(): Promise<void> {
     return;
   }
 
-  const projectRoot = path.resolve(__dirname, "..");
-  await ensureConfigExample(projectRoot);
-
   const { config, configPath, systemPrompt } = await loadConfig();
   const workspaceDir = path.resolve(args.workspace ?? process.cwd());
   await fs.mkdir(workspaceDir, { recursive: true });
 
-  const logger = new RunLogger();
-  await logger.startRun();
-
   console.log(`config> ${configPath}`);
   console.log(`workspace> ${workspaceDir}`);
-  console.log(`provider> ${config.provider}`);
-  console.log(`log> ${logger.getLogFile()}`);
+  console.log(`model> ${config.model}`);
 
   const llm = new LLMClient(config);
-  const tools = createTools(workspaceDir, {
-    file: config.tools.enableFileTools,
-    bash: config.tools.enableBash,
-    note: config.tools.enableNote
-  });
+  const tools = createTools(workspaceDir);
   const agent = new Agent({
     llm,
     systemPrompt: `${systemPrompt}\n\nCurrent Workspace: ${workspaceDir}`,
     tools,
-    maxSteps: config.maxSteps,
-    logger
+    maxSteps: config.maxSteps
   });
 
   if (args.task) {

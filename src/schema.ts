@@ -1,30 +1,11 @@
 export type Role = "system" | "user" | "assistant" | "tool";
-export type Provider = "openai" | "anthropic";
-
-export interface RetryConfig {
-  enabled: boolean;
-  maxRetries: number;
-  initialDelay: number;
-  maxDelay: number;
-  exponentialBase: number;
-}
-
-export interface ToolsConfig {
-  enableFileTools: boolean;
-  enableBash: boolean;
-  enableNote: boolean;
-}
 
 export interface AppConfig {
   apiKey: string;
   apiBase: string;
   model: string;
-  provider: Provider;
-  retry: RetryConfig;
   maxSteps: number;
-  workspaceDir: string;
   systemPromptPath: string;
-  tools: ToolsConfig;
 }
 
 export interface FunctionCall {

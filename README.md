@@ -7,15 +7,16 @@
 - 交互式 CLI
 - `--task` 单次执行模式
 - Agent 主循环
-- OpenAI / Anthropic 兼容协议适配
-- 基础工具：`read_file`、`write_file`、`edit_file`、`bash`、`record_note`、`recall_notes`
-- 基础日志
+- 单一 OpenAI-compatible 协议适配
+- 基础工具：`read_file`、`write_file`、`bash`
 
 刻意省略：
 
 - ACP / Zed
 - MCP
 - Skills
+- 会话笔记 / 本地日志
+- 多模型协议兼容与重试编排
 - 复杂上下文摘要与后台 Bash 任务管理
 
 ## 目录结构
@@ -35,7 +36,7 @@ mini-agent-ts-lite/
 cp config/config-example.yaml config/config.yaml
 ```
 
-然后填入 `api_key`。
+然后只需要填入 `api_key`。
 
 ## 运行
 
@@ -70,4 +71,10 @@ VS Code 已配置为保存时自动格式化；编辑器内使用内置 formatte
 
 ## 说明
 
-这个版本追求“小而完整”，重点是把 Python 版本里的 CLI 路线迁移到 TS，而不是完整复刻全部生态集成。
+这个版本追求“最小闭环”：
+
+- 一次模型调用
+- 一个 agent 循环
+- 三个基础工具
+
+重点是把 tool-calling agent 的主路径讲清楚，而不是复刻完整生态。

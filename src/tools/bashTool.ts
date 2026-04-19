@@ -1,12 +1,11 @@
-const childProcess = require("node:child_process");
-const util = require("node:util");
+import childProcess from "node:child_process";
+import util from "node:util";
 
-import { ToolResult } from "../schema";
-import { BaseTool } from "./base";
+import { Tool, ToolResult } from "../schema";
 
 const execAsync = util.promisify(childProcess.exec);
 
-export class BashTool extends BaseTool {
+export class BashTool implements Tool {
   name = "bash";
   description = "Execute a shell command in the workspace. Use carefully.";
   parameters = {
@@ -17,10 +16,7 @@ export class BashTool extends BaseTool {
     },
     required: ["command"]
   };
-
-  constructor(private readonly workspaceDir: string) {
-    super();
-  }
+  constructor(private readonly workspaceDir: string) {}
 
   async execute(args: Record<string, any>): Promise<ToolResult> {
     try {

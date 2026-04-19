@@ -1,20 +1,17 @@
 import { LLMClient } from "./llm/client";
 import { Message, Tool } from "./schema";
-import { RunLogger } from "./utils/logger";
 
 export class Agent {
   readonly messages: Message[];
   private readonly llm: LLMClient;
   private readonly tools: Map<string, Tool>;
   private readonly maxSteps: number;
-  private readonly logger: RunLogger;
   totalTokens = 0;
 
-  constructor(options: { llm: LLMClient; systemPrompt: string; tools: Tool[]; maxSteps: number; logger: RunLogger }) {
+  constructor(options: { llm: LLMClient; systemPrompt: string; tools: Tool[]; maxSteps: number }) {
     this.llm = options.llm;
     this.tools = new Map(options.tools.map((tool) => [tool.name, tool]));
     this.maxSteps = options.maxSteps;
-    this.logger = options.logger;
     this.messages = [{ role: "system", content: options.systemPrompt }];
   }
 
@@ -29,14 +26,8 @@ export class Agent {
   async run(): Promise<string> {
     for (let step = 0; step < this.maxSteps; step += 1) {
       console.log(`\n[step ${step + 1}/${this.maxSteps}]`);
-      await this.logger.log("request", {
-        messages: this.messages,
-        tools: Array.from(this.tools.keys())
-      });
-
       const response = await this.llm.generate(this.messages, Array.from(this.tools.values()));
       this.totalTokens = response.usage?.totalTokens ?? this.totalTokens;
-      await this.logger.log("response", response);
 
       this.messages.push({
         role: "assistant",
@@ -68,12 +59,6 @@ export class Agent {
         }
 
         const result = await tool.execute(call.function.arguments);
-        await this.logger.log("tool_result", {
-          tool: call.function.name,
-          args: call.function.arguments,
-          result
-        });
-
         if (result.success) {
           console.log(`tool-result> ${result.content}`);
         } else {
