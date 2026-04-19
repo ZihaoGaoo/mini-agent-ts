@@ -33,6 +33,48 @@ export interface TokenUsage {
   totalTokens: number;
 }
 
+export interface StepStartedEvent {
+  type: "step_started";
+  step: number;
+  maxSteps: number;
+}
+
+export interface AssistantMessageEvent {
+  type: "assistant_message";
+  content: string;
+  toolCalls: ToolCall[];
+}
+
+export interface ToolCallEvent {
+  type: "tool_call";
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, any>;
+}
+
+export interface ToolResultEvent {
+  type: "tool_result";
+  toolCallId: string;
+  toolName: string;
+  success: boolean;
+  content: string;
+  error?: string;
+}
+
+export interface RunCompletedEvent {
+  type: "run_completed";
+  content: string;
+  totalTokens: number;
+  exhausted: boolean;
+}
+
+export type AgentEvent =
+  | StepStartedEvent
+  | AssistantMessageEvent
+  | ToolCallEvent
+  | ToolResultEvent
+  | RunCompletedEvent;
+
 export interface LLMResponse {
   content: string;
   toolCalls: ToolCall[];

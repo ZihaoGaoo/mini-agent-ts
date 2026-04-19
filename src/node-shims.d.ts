@@ -21,6 +21,16 @@ declare module "node:path" {
   export = path;
 }
 
+declare module "node:http" {
+  const http: any;
+  export = http;
+}
+
+declare module "node:crypto" {
+  const crypto: any;
+  export = crypto;
+}
+
 declare module "node:child_process" {
   const childProcess: any;
   export = childProcess;

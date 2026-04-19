@@ -2,12 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import * as readline from "node:readline/promises";
 
-import { Agent } from "./agent";
-import { loadConfig } from "./config";
-import { LLMClient } from "./llm/client";
-import { Tool } from "./schema";
-import { BashTool } from "./tools/bashTool";
-import { ReadFileTool, WriteFileTool } from "./tools/fileTools";
+import { AgentRuntime } from "./app/runtime";
+import { AgentEvent } from "./schema";
 
 interface ParsedArgs {
   workspace?: string;
@@ -50,12 +46,31 @@ Commands:
 `);
 }
 
-function createTools(workspaceDir: string): Tool[] {
-  return [
-    new ReadFileTool(workspaceDir),
-    new WriteFileTool(workspaceDir),
-    new BashTool(workspaceDir)
-  ];
+function handleCliEvent(event: AgentEvent): void {
+  if (event.type === "step_started") {
+    console.log(`\n[step ${event.step}/${event.maxSteps}]`);
+    return;
+  }
+
+  if (event.type === "assistant_message") {
+    if (event.content) {
+      console.log(`assistant> ${event.content}`);
+    }
+    return;
+  }
+
+  if (event.type === "tool_call") {
+    console.log(`tool> ${event.toolName}`);
+    return;
+  }
+
+  if (event.type === "tool_result") {
+    if (event.success) {
+      console.log(`tool-result> ${event.content}`);
+    } else {
+      console.log(`tool-error> ${event.error}`);
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -65,26 +80,22 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { config, configPath, systemPrompt } = await loadConfig();
   const workspaceDir = path.resolve(args.workspace ?? process.cwd());
   await fs.mkdir(workspaceDir, { recursive: true });
+  const { runtime, configPath, model } = await AgentRuntime.createDefault();
+  const session = await runtime.createSession(workspaceDir, "cli");
 
   console.log(`config> ${configPath}`);
   console.log(`workspace> ${workspaceDir}`);
-  console.log(`model> ${config.model}`);
-
-  const llm = new LLMClient(config);
-  const tools = createTools(workspaceDir);
-  const agent = new Agent({
-    llm,
-    systemPrompt: `${systemPrompt}\n\nCurrent Workspace: ${workspaceDir}`,
-    tools,
-    maxSteps: config.maxSteps
-  });
+  console.log(`model> ${model}`);
 
   if (args.task) {
-    agent.addUserMessage(args.task);
-    await agent.run();
+    await runtime.runTurn({
+      sessionId: session.id,
+      workspaceDir,
+      userMessage: args.task,
+      onEvent: handleCliEvent
+    });
     return;
   }
 
@@ -112,25 +123,30 @@ async function main(): Promise<void> {
     }
 
     if (input === "/clear") {
-      agent.messages.splice(1);
+      await runtime.clearSession(session.id);
       console.log("history cleared");
       continue;
     }
 
     if (input === "/history") {
-      console.log(`messages> ${agent.getMessageCount()}`);
+      const currentSession = await runtime.getSession(session.id);
+      console.log(`messages> ${currentSession?.messages.length ?? 0}`);
       continue;
     }
 
     if (input === "/stats") {
-      console.log(`messages> ${agent.getMessageCount()}`);
-      console.log(`tokens> ${agent.totalTokens}`);
+      const currentSession = await runtime.getSession(session.id);
+      console.log(`messages> ${currentSession?.messages.length ?? 0}`);
+      console.log(`tokens> ${currentSession?.totalTokens ?? 0}`);
       continue;
     }
 
-    agent.addUserMessage(input);
     try {
-      await agent.run();
+      await runtime.runTurn({
+        sessionId: session.id,
+        userMessage: input,
+        onEvent: handleCliEvent
+      });
     } catch (error) {
       console.error(`error> ${String(error)}`);
     }
