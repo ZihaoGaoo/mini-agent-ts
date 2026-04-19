@@ -1,82 +1,49 @@
 import fs from "node:fs/promises";
-import http from "node:http";
-import path from "node:path";
+
+import Fastify from "fastify";
+import { Pool } from "pg";
 
 import { AgentRuntime } from "./app/runtime";
-import { SessionSnapshot } from "./app/sessionStore";
+import { PostgresAgentStore } from "./app/postgresStore";
+import { SessionSnapshot, StaticEnvironmentResolver } from "./app/sessionStore";
+import { getPostgresConfig } from "./db/config";
 
-interface ParsedArgs {
-  workspace?: string;
-  host?: string;
-  port?: number;
-  help?: boolean;
+interface CreateSessionBody {
+  sessionId?: string;
+  environmentId?: string;
 }
 
-function parseArgs(argv: string[]): ParsedArgs {
-  const parsed: ParsedArgs = {};
-  for (let i = 0; i < argv.length; i += 1) {
-    const current = argv[i];
-    if (current === "--workspace" || current === "-w") {
-      parsed.workspace = argv[i + 1];
-      i += 1;
-    } else if (current === "--host") {
-      parsed.host = argv[i + 1];
-      i += 1;
-    } else if (current === "--port" || current === "-p") {
-      parsed.port = Number(argv[i + 1]);
-      i += 1;
-    } else if (current === "--help" || current === "-h") {
-      parsed.help = true;
-    }
-  }
-  return parsed;
+interface SendMessageBody {
+  content?: string;
+  environmentId?: string;
 }
 
-function printHelp(): void {
-  console.log(`
-Mini Agent TS Lite HTTP
-
-Usage:
-  node dist/http.js
-  node dist/http.js --workspace /path/to/project
-  node dist/http.js --port 3000 --host 127.0.0.1
-
-Endpoints:
-  GET    /health
-  POST   /sessions
-  GET    /sessions/:id
-  DELETE /sessions/:id
-  POST   /sessions/:id/messages
-`);
-}
-
-async function readJsonBody(req: any): Promise<Record<string, any>> {
-  const chunks: string[] = [];
-
-  for await (const chunk of req) {
-    chunks.push(String(chunk));
+function parseEnvironmentMap(): Record<string, string> {
+  const raw = process.env.AGENT_ENVIRONMENT_MAP_JSON ?? "{}";
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("AGENT_ENVIRONMENT_MAP_JSON must be a JSON object mapping environmentId to workspace path.");
   }
 
-  if (!chunks.length) {
-    return {};
-  }
-
-  return JSON.parse(chunks.join(""));
+  return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value)]));
 }
 
-function sendJson(res: any, status: number, payload: unknown): void {
-  const body = JSON.stringify(payload, null, 2);
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Content-Length": String(body.length)
-  });
-  res.end(body);
+function requireString(value: unknown, fieldName: string): string {
+  const result = String(value ?? "").trim();
+  if (!result) {
+    throw new Error(`${fieldName} must be a non-empty string.`);
+  }
+  return result;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function sessionSummary(session: SessionSnapshot) {
   return {
     sessionId: session.id,
-    workspaceDir: session.workspaceDir,
+    environmentId: session.environmentId,
     currentAgent: session.currentAgent,
     messageCount: session.messages.length,
     totalTokens: session.totalTokens
@@ -84,98 +51,102 @@ function sessionSummary(session: SessionSnapshot) {
 }
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-  if (args.help) {
-    printHelp();
-    return;
+  const host = process.env.AGENT_HTTP_HOST ?? process.env.HOST ?? "127.0.0.1";
+  const port = Number(process.env.AGENT_HTTP_PORT ?? process.env.PORT ?? "3000");
+  const environmentMap = parseEnvironmentMap();
+
+  for (const workspaceDir of Object.values(environmentMap)) {
+    await fs.mkdir(workspaceDir, { recursive: true });
   }
 
-  const host = args.host ?? "127.0.0.1";
-  const port = args.port ?? 3000;
-  const defaultWorkspaceDir = path.resolve(args.workspace ?? process.cwd());
-  await fs.mkdir(defaultWorkspaceDir, { recursive: true });
+  const pool = new Pool(getPostgresConfig());
+  const store = new PostgresAgentStore(pool);
+  const { runtime, configPath, model } = await AgentRuntime.createDefault(
+    store,
+    new StaticEnvironmentResolver(environmentMap)
+  );
 
-  const { runtime, configPath, model } = await AgentRuntime.createDefault();
+  const app = Fastify({
+    logger: false
+  });
 
-  const server = http.createServer(async (req: any, res: any) => {
-    try {
-      const method = req.method ?? "GET";
-      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${host}:${port}`}`);
-      const pathname = url.pathname;
-      const sessionMatch = pathname.match(/^\/sessions\/([^/]+)$/);
-      const messageMatch = pathname.match(/^\/sessions\/([^/]+)\/messages$/);
+  app.addHook("onClose", async () => {
+    await pool.end();
+  });
 
-      if (method === "GET" && pathname === "/health") {
-        sendJson(res, 200, { ok: true, model, configPath });
-        return;
-      }
+  app.setErrorHandler((error, _request, reply) => {
+    const message = getErrorMessage(error);
+    const statusCode = message.includes("not found") ? 404 : 400;
+    void reply.status(statusCode).send({ error: { message, statusCode } });
+  });
 
-      if (method === "POST" && pathname === "/sessions") {
-        const body = await readJsonBody(req);
-        const workspaceDir = path.resolve(body.workspaceDir ?? defaultWorkspaceDir);
-        const session = await runtime.createSession(workspaceDir, body.sessionId);
-        sendJson(res, 201, sessionSummary(session));
-        return;
-      }
+  app.get("/health", async () => ({
+    ok: true,
+    model,
+    configPath
+  }));
 
-      if (method === "GET" && sessionMatch) {
-        const session = await runtime.getSession(sessionMatch[1]);
-        if (!session) {
-          sendJson(res, 404, { error: `Session ${sessionMatch[1]} not found.` });
-          return;
-        }
-        sendJson(res, 200, sessionSummary(session));
-        return;
-      }
+  app.post<{ Body: CreateSessionBody }>("/sessions", async (request, reply) => {
+    const environmentId = requireString(request.body?.environmentId, "environmentId");
+    const session = await runtime.createSession(environmentId, request.body?.sessionId);
+    return reply.status(201).send(sessionSummary(session));
+  });
 
-      if (method === "DELETE" && sessionMatch) {
-        const session = await runtime.getSession(sessionMatch[1]);
-        if (!session) {
-          sendJson(res, 404, { error: `Session ${sessionMatch[1]} not found.` });
-          return;
-        }
-        await runtime.deleteSession(sessionMatch[1]);
-        sendJson(res, 200, { deleted: true, sessionId: sessionMatch[1] });
-        return;
-      }
-
-      if (method === "POST" && messageMatch) {
-        const body = await readJsonBody(req);
-        const content = String(body.content ?? "").trim();
-        if (!content) {
-          sendJson(res, 400, { error: "Request body must include non-empty content." });
-          return;
-        }
-
-        const result = await runtime.runTurn({
-          sessionId: messageMatch[1],
-          workspaceDir: path.resolve(body.workspaceDir ?? defaultWorkspaceDir),
-          userMessage: content
-        });
-
-        sendJson(res, 200, {
-          sessionId: result.sessionId,
-          runId: result.runId,
-          workspaceDir: result.workspaceDir,
-          assistantMessage: result.assistantMessage,
-          messageCount: result.messageCount,
-          totalTokens: result.totalTokens
-        });
-        return;
-      }
-
-      sendJson(res, 404, { error: `Route not found: ${method} ${pathname}` });
-    } catch (error) {
-      sendJson(res, 500, { error: String(error) });
+  app.get<{ Params: { id: string } }>("/sessions/:id", async (request) => {
+    const session = await runtime.getSession(request.params.id);
+    if (!session) {
+      throw new Error(`Session ${request.params.id} not found.`);
     }
+    return sessionSummary(session);
   });
 
-  server.listen(port, host, () => {
-    console.log(`config> ${configPath}`);
-    console.log(`workspace> ${defaultWorkspaceDir}`);
-    console.log(`model> ${model}`);
-    console.log(`http> http://${host}:${port}`);
+  app.delete<{ Params: { id: string } }>("/sessions/:id", async (request) => {
+    const session = await runtime.getSession(request.params.id);
+    if (!session) {
+      throw new Error(`Session ${request.params.id} not found.`);
+    }
+
+    await runtime.deleteSession(request.params.id);
+    return {
+      deleted: true,
+      sessionId: request.params.id
+    };
   });
+
+  app.post<{ Params: { id: string }; Body: SendMessageBody }>("/sessions/:id/messages", async (request) => {
+    const content = requireString(request.body?.content, "content");
+    const existingSession = await runtime.getSession(request.params.id);
+    const environmentId = request.body?.environmentId ? requireString(request.body.environmentId, "environmentId") : undefined;
+
+    if (!existingSession && !environmentId) {
+      throw new Error("environmentId is required when creating a new session via /messages.");
+    }
+
+    const result = await runtime.runTurn({
+      sessionId: request.params.id,
+      environmentId,
+      userMessage: content
+    });
+
+    return {
+      sessionId: result.sessionId,
+      runId: result.runId,
+      environmentId: result.environmentId,
+      assistantMessage: result.assistantMessage,
+      messageCount: result.messageCount,
+      totalTokens: result.totalTokens
+    };
+  });
+
+  await app.listen({
+    host,
+    port
+  });
+
+  console.log(`config> ${configPath}`);
+  console.log(`model> ${model}`);
+  console.log(`postgres> ${getPostgresConfig().host}:${getPostgresConfig().port}/${getPostgresConfig().database}`);
+  console.log(`http> http://${host}:${port}`);
 }
 
 main().catch((error) => {

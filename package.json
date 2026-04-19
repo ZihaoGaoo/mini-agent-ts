@@ -1,15 +1,15 @@
 {
   "name": "mini-agent-ts-lite",
   "version": "0.1.0",
-  "description": "Lightweight TypeScript CLI agent inspired by Mini-Agent's CLI flow",
+  "description": "Web-first TypeScript agent runtime with Fastify, PostgreSQL, and a companion CLI",
   "private": true,
   "packageManager": "pnpm@10.28.2",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/cli.js",
-    "start:http": "node dist/http.js",
-    "dev": "pnpm build && node dist/cli.js",
-    "dev:http": "pnpm build && node dist/http.js",
+    "start": "node dist/http.js",
+    "start:cli": "node dist/cli.js",
+    "dev": "pnpm build && node dist/http.js",
+    "dev:cli": "pnpm build && node dist/cli.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -18,5 +18,9 @@
     "@types/node": "^24",
     "prettier": "^3",
     "typescript": "^5"
+  },
+  "dependencies": {
+    "fastify": "^5.8.5",
+    "pg": "^8.20.0"
   }
 }

@@ -15,6 +15,28 @@ function randomToolId(): string {
   return `tool_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function parseToolArguments(raw: unknown): Record<string, any> {
+  if (!raw || raw === "undefined") {
+    return {};
+  }
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed === "undefined") {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, any>) : {};
+}
+
 export class LLMClient {
   private readonly apiKey: string;
   private readonly apiBase: string;
@@ -58,7 +80,7 @@ export class LLMClient {
       type: "function",
       function: {
         name: call.function.name,
-        arguments: JSON.parse(call.function.arguments || "{}")
+        arguments: parseToolArguments(call.function.arguments)
       }
     }));
 

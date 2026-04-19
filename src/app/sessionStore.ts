@@ -12,7 +12,7 @@ export interface SessionRecord {
   userId?: string;
   status: SessionStatus;
   currentAgent: string;
-  workspaceDir: string;
+  environmentId: string;
   totalTokens: number;
   metadata: Record<string, any>;
   createdAt: string;
@@ -78,6 +78,7 @@ export interface HandoffRecord {
 
 export interface SessionSnapshot {
   id: string;
+  environmentId: string;
   workspaceDir: string;
   currentAgent: string;
   messages: MessageRecord[];
@@ -88,7 +89,7 @@ export interface SessionCreateInput {
   id?: string;
   userId?: string;
   currentAgent: string;
-  workspaceDir: string;
+  environmentId: string;
   metadata?: Record<string, any>;
 }
 
@@ -133,6 +134,7 @@ export interface AgentStore {
   createSession(input: SessionCreateInput): Promise<SessionRecord>;
   getSession(id: string): Promise<SessionRecord | null>;
   updateSession(id: string, patch: Partial<SessionRecord>): Promise<SessionRecord>;
+  resolveWorkspaceDir(session: SessionRecord): Promise<string>;
   loadSessionSnapshot(id: string): Promise<SessionSnapshot | null>;
   clearSession(id: string): Promise<SessionSnapshot>;
   deleteSession(id: string): Promise<void>;
@@ -147,11 +149,18 @@ export interface AgentStore {
   listHandoffs(runId: string): Promise<HandoffRecord[]>;
 }
 
+export interface EnvironmentResolver {
+  resolveWorkspaceDir(environmentId: string): Promise<string>;
+}
+
 function now(): string {
   return new Date().toISOString();
 }
 
 function deepClone<T>(value: T): T {
+  if (value === undefined) {
+    return value;
+  }
   return JSON.parse(JSON.stringify(value));
 }
 
@@ -189,7 +198,7 @@ export class InMemorySessionStore implements AgentStore {
       userId: input.userId,
       status: "active",
       currentAgent: input.currentAgent,
-      workspaceDir: input.workspaceDir,
+      environmentId: input.environmentId,
       totalTokens: 0,
       metadata: input.metadata ?? {},
       createdAt,
@@ -222,6 +231,14 @@ export class InMemorySessionStore implements AgentStore {
     return cloneSession(next);
   }
 
+  async resolveWorkspaceDir(session: SessionRecord): Promise<string> {
+    const workspaceDir = session.metadata?.workspaceDir;
+    if (!workspaceDir || typeof workspaceDir !== "string") {
+      throw new Error(`Session ${session.id} is missing a resolved workspaceDir in metadata.`);
+    }
+    return workspaceDir;
+  }
+
   async loadSessionSnapshot(id: string): Promise<SessionSnapshot | null> {
     const session = this.sessions.get(id);
     if (!session) {
@@ -229,9 +246,11 @@ export class InMemorySessionStore implements AgentStore {
     }
 
     const messages = (this.messages.get(id) ?? []).map(cloneMessage);
+    const workspaceDir = await this.resolveWorkspaceDir(session);
     return {
       id: session.id,
-      workspaceDir: session.workspaceDir,
+      environmentId: session.environmentId,
+      workspaceDir,
       currentAgent: session.currentAgent,
       messages,
       totalTokens: session.totalTokens
@@ -273,7 +292,8 @@ export class InMemorySessionStore implements AgentStore {
 
     return {
       id,
-      workspaceDir: session.workspaceDir,
+      environmentId: session.environmentId,
+      workspaceDir: await this.resolveWorkspaceDir(session),
       currentAgent: session.currentAgent,
       messages: resequenced.map(cloneMessage),
       totalTokens: 0
@@ -441,5 +461,17 @@ export class InMemorySessionStore implements AgentStore {
 
   async listHandoffs(runId: string): Promise<HandoffRecord[]> {
     return (this.handoffs.get(runId) ?? []).map(cloneHandoff);
+  }
+}
+
+export class StaticEnvironmentResolver implements EnvironmentResolver {
+  constructor(private readonly mappings: Record<string, string>) {}
+
+  async resolveWorkspaceDir(environmentId: string): Promise<string> {
+    const workspaceDir = this.mappings[environmentId];
+    if (!workspaceDir) {
+      throw new Error(`Unknown environmentId: ${environmentId}`);
+    }
+    return workspaceDir;
   }
 }

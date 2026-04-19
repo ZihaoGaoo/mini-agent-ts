@@ -3,6 +3,7 @@ import path from "node:path";
 import * as readline from "node:readline/promises";
 
 import { AgentRuntime } from "./app/runtime";
+import { StaticEnvironmentResolver } from "./app/sessionStore";
 import { AgentEvent } from "./schema";
 
 interface ParsedArgs {
@@ -81,9 +82,15 @@ async function main(): Promise<void> {
   }
 
   const workspaceDir = path.resolve(args.workspace ?? process.cwd());
+  const environmentId = `local:${workspaceDir}`;
   await fs.mkdir(workspaceDir, { recursive: true });
-  const { runtime, configPath, model } = await AgentRuntime.createDefault();
-  const session = await runtime.createSession(workspaceDir, "cli");
+  const { runtime, configPath, model } = await AgentRuntime.createDefault(
+    undefined,
+    new StaticEnvironmentResolver({
+      [environmentId]: workspaceDir
+    })
+  );
+  const session = await runtime.createSession(environmentId, "cli");
 
   console.log(`config> ${configPath}`);
   console.log(`workspace> ${workspaceDir}`);
@@ -92,7 +99,7 @@ async function main(): Promise<void> {
   if (args.task) {
     await runtime.runTurn({
       sessionId: session.id,
-      workspaceDir,
+      environmentId,
       userMessage: args.task,
       onEvent: handleCliEvent
     });

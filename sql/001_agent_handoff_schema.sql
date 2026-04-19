@@ -13,7 +13,7 @@ CREATE TABLE sessions (
   user_id TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'busy', 'archived', 'error')),
   current_agent TEXT NOT NULL,
-  workspace_dir TEXT NOT NULL,
+  environment_id TEXT NOT NULL,
   total_tokens BIGINT NOT NULL DEFAULT 0,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -46,6 +46,9 @@ CREATE TABLE messages (
   agent_name TEXT,
   message_type TEXT NOT NULL DEFAULT 'message' CHECK (message_type IN ('message', 'tool_result', 'handoff_summary')),
   content TEXT NOT NULL DEFAULT '',
+  tool_call_id TEXT,
+  name TEXT,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   sequence BIGINT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (session_id, sequence)
@@ -115,9 +118,9 @@ COMMENT ON COLUMN sessions.id IS 'Primary key for the conversation.';
 COMMENT ON COLUMN sessions.user_id IS 'Optional business user identifier owning the session.';
 COMMENT ON COLUMN sessions.status IS 'Conversation state, e.g. active, busy, archived, or error.';
 COMMENT ON COLUMN sessions.current_agent IS 'Name of the agent currently owning the conversation after the latest handoff.';
-COMMENT ON COLUMN sessions.workspace_dir IS 'Workspace directory bound to the session for local file and shell tools.';
+COMMENT ON COLUMN sessions.environment_id IS 'Logical execution environment or sandbox identifier bound to the session.';
 COMMENT ON COLUMN sessions.total_tokens IS 'Latest total token count tracked for the session.';
-COMMENT ON COLUMN sessions.metadata IS 'Arbitrary session-level metadata in JSON form.';
+COMMENT ON COLUMN sessions.metadata IS 'Arbitrary session-level metadata such as resolved local workspace path.';
 COMMENT ON COLUMN sessions.created_at IS 'Session creation timestamp.';
 COMMENT ON COLUMN sessions.updated_at IS 'Last session update timestamp.';
 
@@ -146,6 +149,9 @@ COMMENT ON COLUMN messages.role IS 'Message role: system, user, assistant, or to
 COMMENT ON COLUMN messages.agent_name IS 'Agent responsible for this message, if applicable.';
 COMMENT ON COLUMN messages.message_type IS 'Message subtype, e.g. normal message, tool result, or handoff summary.';
 COMMENT ON COLUMN messages.content IS 'Text content stored in the conversation history.';
+COMMENT ON COLUMN messages.tool_call_id IS 'Tool call identifier for tool result messages when the message is tied to a specific call.';
+COMMENT ON COLUMN messages.name IS 'Optional tool or sender name associated with the message.';
+COMMENT ON COLUMN messages.payload IS 'Structured message payload such as assistant tool_calls metadata.';
 COMMENT ON COLUMN messages.sequence IS 'Monotonic sequence number within the session for deterministic replay.';
 COMMENT ON COLUMN messages.created_at IS 'Message creation timestamp.';
 

@@ -1,7 +1,8 @@
 # Mini Agent TS Lite Configuration
 
 api_key: "YOUR_API_KEY_HERE"
-api_base: "https://api.minimax.io/v1"
-model: "MiniMax-M2.5"
+api_base: "https://api.deepseek.com"
+model: "deepseek-chat"
+provider: "deepseek"
 max_steps: 20
 system_prompt_path: "system_prompt.md"

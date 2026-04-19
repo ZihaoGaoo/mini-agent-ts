@@ -7,8 +7,8 @@ import { parseSimpleYaml } from "./utils/yaml";
 function normalizeConfig(raw: Record<string, any>): AppConfig {
   return {
     apiKey: raw.api_key,
-    apiBase: raw.api_base ?? "https://api.minimax.io/v1",
-    model: raw.model ?? "MiniMax-M2.5",
+    apiBase: raw.api_base ?? "https://api.deepseek.com",
+    model: raw.model ?? "deepseek-chat",
     maxSteps: raw.max_steps ?? 20,
     systemPromptPath: raw.system_prompt_path ?? "system_prompt.md"
   };

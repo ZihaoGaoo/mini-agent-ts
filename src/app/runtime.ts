@@ -9,24 +9,26 @@ import { BashTool } from "../tools/bashTool";
 import { ReadFileTool, WriteFileTool } from "../tools/fileTools";
 import {
   AgentStore,
+  EnvironmentResolver,
   InMemorySessionStore,
   MessageCreateInput,
   MessageRecord,
   SessionSnapshot,
+  StaticEnvironmentResolver,
   ToolCallCreateInput
 } from "./sessionStore";
 
 export interface RunTurnInput {
   sessionId: string;
   userMessage: string;
-  workspaceDir?: string;
+  environmentId?: string;
   onEvent?: (event: AgentEvent) => void;
 }
 
 export interface RunTurnResult {
   sessionId: string;
   runId: string;
-  workspaceDir: string;
+  environmentId: string;
   assistantMessage: string;
   messageCount: number;
   totalTokens: number;
@@ -38,6 +40,7 @@ export interface AgentRuntimeOptions {
   systemPrompt: string;
   maxSteps: number;
   store?: AgentStore;
+  environmentResolver?: EnvironmentResolver;
 }
 
 function createTools(workspaceDir: string): Tool[] {
@@ -112,15 +115,20 @@ export class AgentRuntime {
   private readonly systemPrompt: string;
   private readonly maxSteps: number;
   private readonly store: AgentStore;
+  private readonly environmentResolver: EnvironmentResolver;
 
   constructor(options: AgentRuntimeOptions) {
     this.llm = options.llm;
     this.systemPrompt = options.systemPrompt;
     this.maxSteps = options.maxSteps;
     this.store = options.store ?? new InMemorySessionStore();
+    this.environmentResolver = options.environmentResolver ?? new StaticEnvironmentResolver({});
   }
 
-  static async createDefault(store?: AgentStore): Promise<{
+  static async createDefault(
+    store?: AgentStore,
+    environmentResolver?: EnvironmentResolver
+  ): Promise<{
     runtime: AgentRuntime;
     configPath: string;
     model: string;
@@ -131,21 +139,29 @@ export class AgentRuntime {
         llm: new LLMClient(config),
         systemPrompt,
         maxSteps: config.maxSteps,
-        store
+        store,
+        environmentResolver
       }),
       configPath,
       model: config.model
     };
   }
 
-  async createSession(workspaceDir: string, sessionId = crypto.randomUUID(), currentAgent = "main"): Promise<SessionSnapshot> {
-    const resolvedWorkspaceDir = workspaceDir;
+  async createSession(
+    environmentId: string,
+    sessionId = crypto.randomUUID(),
+    currentAgent = "main"
+  ): Promise<SessionSnapshot> {
+    const resolvedWorkspaceDir = await this.environmentResolver.resolveWorkspaceDir(environmentId);
     await fs.mkdir(resolvedWorkspaceDir, { recursive: true });
 
     await this.store.createSession({
       id: sessionId,
       currentAgent,
-      workspaceDir: resolvedWorkspaceDir
+      environmentId,
+      metadata: {
+        workspaceDir: resolvedWorkspaceDir
+      }
     });
 
     await this.store.appendMessages([
@@ -175,10 +191,10 @@ export class AgentRuntime {
   async runTurn(input: RunTurnInput): Promise<RunTurnResult> {
     let snapshot = await this.store.loadSessionSnapshot(input.sessionId);
     if (!snapshot) {
-      if (!input.workspaceDir) {
-        throw new Error(`Session ${input.sessionId} not found. Provide workspaceDir to create it.`);
+      if (!input.environmentId) {
+        throw new Error(`Session ${input.sessionId} not found. Provide environmentId to create it.`);
       }
-      snapshot = await this.createSession(input.workspaceDir, input.sessionId);
+      snapshot = await this.createSession(input.environmentId, input.sessionId, "main");
     }
 
     const run = await this.store.createRun({
@@ -250,7 +266,7 @@ export class AgentRuntime {
     return {
       sessionId: nextSnapshot.id,
       runId: run.id,
-      workspaceDir: nextSnapshot.workspaceDir,
+      environmentId: nextSnapshot.environmentId,
       assistantMessage,
       messageCount: nextSnapshot.messages.length,
       totalTokens: nextSnapshot.totalTokens,
